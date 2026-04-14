@@ -17,7 +17,9 @@ package io.casehub.engine.internal.engine.handler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.casehub.api.model.Worker;
+import io.casehub.api.spi.ContextDiffStrategy;
 import io.casehub.engine.internal.event.CaseContextChangedEvent;
 import io.casehub.engine.internal.event.EventBusAddresses;
 import io.casehub.engine.internal.event.WorkflowExecutionCompleted;
@@ -39,10 +41,10 @@ import org.jboss.logging.Logger;
 public class WorkflowExecutionCompletedHandler {
 
   @Inject EventBus eventBus;
+  @Inject ContextDiffStrategy contextDiffStrategy;
 
   private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-
-  private static final Logger LOG = Logger.getLogger(CaseStartedEventHandler.class);
+  private static final Logger LOG = Logger.getLogger(WorkflowExecutionCompletedHandler.class);
 
   @ConsumeEvent(value = EventBusAddresses.WORKER_EXECUTION_FINISHED)
   public Uni<Void> onWorkflowExecutionCompletedHandler(WorkflowExecutionCompleted event) {
@@ -51,13 +53,19 @@ public class WorkflowExecutionCompletedHandler {
     final Map<String, Object> rawOutput = event.output() == null ? Map.of() : event.output();
     final Instant now = Instant.now();
 
-    final EventLog eventLog =
-        buildEventLog(caseInstance, worker, rawOutput, event.idempotency(), now);
+    // Snapshot context BEFORE applying worker output — used for diff computation
+    final JsonNode contextBefore = caseInstance.getCaseContext().asJsonNode();
+
     return Panache.withTransaction(
             () -> {
               caseInstance.getCaseContext().setAll(rawOutput);
-              JsonNode contextSnapshot = caseInstance.getCaseContext().asJsonNode();
-              return eventLog.persist().replaceWith(contextSnapshot);
+              JsonNode contextAfter = caseInstance.getCaseContext().asJsonNode();
+
+              JsonNode diff = contextDiffStrategy.compute(contextBefore, contextAfter);
+              EventLog eventLog =
+                  buildEventLog(caseInstance, worker, rawOutput, event.idempotency(), now, diff);
+
+              return eventLog.persist().replaceWith(contextAfter);
             })
         .invoke(
             contextSnapshot ->
@@ -79,18 +87,25 @@ public class WorkflowExecutionCompletedHandler {
       Worker worker,
       Map<String, Object> output,
       String idempotency,
-      Instant timestamp) {
+      Instant timestamp,
+      JsonNode contextDiff) {
     final EventLog eventLog = new EventLog();
     eventLog.setCaseId(caseInstance.getUuid());
     eventLog.setWorkerId(worker.getName());
     eventLog.setStreamType(EventStreamType.CASE);
     eventLog.setTimestamp(timestamp);
     eventLog.setEventType(CaseHubEventType.WORKER_EXECUTION_COMPLETED);
-
     eventLog.setPayload(OBJECT_MAPPER.valueToTree(output == null ? Map.of() : output));
-
-    eventLog.setMetadata(OBJECT_MAPPER.createObjectNode().put("inputDataHash", idempotency));
-
+    eventLog.setMetadata(buildMetadata(idempotency, contextDiff));
     return eventLog;
+  }
+
+  private JsonNode buildMetadata(String idempotency, JsonNode contextDiff) {
+    ObjectNode metadata = OBJECT_MAPPER.createObjectNode();
+    metadata.put("inputDataHash", idempotency);
+    if (contextDiff != null) {
+      metadata.set("contextChanges", contextDiff);
+    }
+    return metadata;
   }
 }

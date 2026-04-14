@@ -18,7 +18,6 @@ package io.casehub.engine.internal.diff;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.casehub.api.spi.ContextDiffStrategy;
 import io.fabric8.zjsonpatch.JsonDiff;
-import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Alternative;
 
@@ -38,7 +37,6 @@ import jakarta.enterprise.inject.Alternative;
  * </pre>
  */
 @Alternative
-@Priority(10)
 @ApplicationScoped
 public class JsonPatchContextDiffStrategy implements ContextDiffStrategy {
 
