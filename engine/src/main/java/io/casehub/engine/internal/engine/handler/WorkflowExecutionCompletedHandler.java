@@ -53,11 +53,10 @@ public class WorkflowExecutionCompletedHandler {
     final Map<String, Object> rawOutput = event.output() == null ? Map.of() : event.output();
     final Instant now = Instant.now();
 
-    // Snapshot context BEFORE applying worker output — used for diff computation
-    final JsonNode contextBefore = caseInstance.getCaseContext().asJsonNode();
-
     return Panache.withTransaction(
             () -> {
+              // Snapshot BEFORE applying output — deep copy so setAll cannot corrupt it
+              JsonNode contextBefore = caseInstance.getCaseContext().snapshot().asJsonNode();
               caseInstance.getCaseContext().setAll(rawOutput);
               JsonNode contextAfter = caseInstance.getCaseContext().asJsonNode();
 

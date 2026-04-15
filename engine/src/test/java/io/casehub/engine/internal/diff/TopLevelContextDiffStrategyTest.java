@@ -98,6 +98,20 @@ class TopLevelContextDiffStrategyTest {
     assertThat(diff.get("tempKey").has("after")).isFalse();
   }
 
+  @Test
+  void nullValueWritten_treatedAsRemoval_noAfterField() {
+    ObjectNode before = MAPPER.createObjectNode();
+    before.put("tempKey", "old-value");
+    ObjectNode after = MAPPER.createObjectNode();
+    after.putNull("tempKey"); // worker explicitly sets null
+
+    JsonNode diff = strategy.compute(before, after);
+
+    assertThat(diff.has("tempKey")).isTrue();
+    assertThat(diff.get("tempKey").get("before").asText()).isEqualTo("old-value");
+    assertThat(diff.get("tempKey").has("after")).isFalse();
+  }
+
   // ---- Unchanged keys -------------------------------------------------------
 
   @Test

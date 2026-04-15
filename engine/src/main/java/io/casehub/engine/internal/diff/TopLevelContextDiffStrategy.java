@@ -53,14 +53,18 @@ public class TopLevelContextDiffStrategy implements ContextDiffStrategy {
             key -> {
               JsonNode afterVal = after.get(key);
               JsonNode beforeVal = before.get(key);
-              if (!afterVal.equals(beforeVal)) {
-                ObjectNode change = MAPPER.createObjectNode();
-                if (beforeVal != null && !beforeVal.isMissingNode()) {
-                  change.set("before", beforeVal);
-                }
-                change.set("after", afterVal);
-                changes.set(key, change);
+              if (afterVal.equals(beforeVal)) {
+                return; // unchanged — omit
               }
+              ObjectNode change = MAPPER.createObjectNode();
+              if (beforeVal != null && !beforeVal.isMissingNode()) {
+                change.set("before", beforeVal);
+              }
+              // null written by worker is treated as removal — no "after" field
+              if (afterVal != null && !afterVal.isNull()) {
+                change.set("after", afterVal);
+              }
+              changes.set(key, change);
             });
 
     // Removed keys — present in `before` but absent in `after`

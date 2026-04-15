@@ -42,7 +42,16 @@ class NoOpContextDiffStrategyTest {
   }
 
   @Test
-  void alwaysReturnsNull_forNullInputs() {
-    assertThat(strategy.compute(null, null)).isNull();
+  void alwaysReturnsNull_regardlessOfContent() {
+    ObjectNode before = MAPPER.createObjectNode();
+    before.put("status", "processing");
+    before.put("score", 10);
+    ObjectNode after = MAPPER.createObjectNode();
+    after.put("status", "done");
+    after.put("score", 99);
+    after.put("newKey", "hello");
+
+    // NoOp returns null regardless of how much the context changed
+    assertThat(strategy.compute(before, after)).isNull();
   }
 }
